@@ -1,0 +1,95 @@
+
+---ALL THE DATA RECIEVED AFTER THIS MANIPULATION IS SAVED AS Flu project.csv
+
+/* The data is of massachussete
+1.) Total % of patients getting flu shots stratified by
+   a.) Age
+   b.) Race
+   c.) County
+   d.) Overall
+2.) Running total of flu shots over the course 0f 2022 month by month
+3.) Total number of flu shots given in 2022
+4.) A list of Patients that show whether or not they recieved the flu shots
+
+Requirements:
+Patients must have been "Active in our hospital system"---Atleast the patient must have encounnet in the past 2/3 years
+Patients should be alive.
+Patient should be 6 months and older
+*/
+
+
+/*
+race and county is in patients table
+AGE has to be calculated from birthdate 
+for running total and total number of flue shots can taken from immunization table filter by date
+for finding the list of patient who have recieved flu shots we have to JOIN immunization with patient table
+
+Retain only patients that are active in the hospital system
+choose only alive patients so JOIN patients table with encounter
+For filtering out patient less than 6 months of age, we need to calculate 'AGE'
+data shuold be filtered at each step for only 2022 year
+*/
+
+
+select * from conditions
+select * from encounters
+select * from immunizations
+select * from patients
+
+/*
+The AGE function calculates the difference between two dates, returning the result as an interval (a combination of years, months, and days).
+The EXTRACT(MONTH FROM interval) function extracts just the months portion from the interval returned by AGE.
+*/
+
+
+with active_patients as
+(
+	select distinct patient
+	from encounters as e
+	join patients as pat
+		on e.patient = pat.id
+	where e.start between '2020-01-01 00:00' and '2022-12-31 23:59'
+	  and pat.deathdate is null
+	  and extract(month from age('2022-12-31', pat.birthdate)) >= 6
+),
+
+flu_shot_2022 as 
+(
+select patient, min(date) as earliest_flu_shot_2022
+from immunizations
+where code = '5302'
+  and date between '2022-01-01 00:00' and '2022-12-31 23:59'
+group by patient
+)
+
+select EXTRACT(EPOCH FROM AGE(DATE '2022-12-31', pat.birthdate)) / 2592000 AS age_in_months
+	  ,pat.race
+	  ,pat.ethnicity
+	  ,pat.gender
+	  ,pat.zip
+	  ,pat.county
+	  ,pat.id
+	  ,pat.first
+	  ,pat.last
+	  ,flu.earliest_flu_shot_2022
+	  ,case 
+	  	  when flu.patient is not null 
+		  then 1 else 0 
+	   end as flu_shot_2022
+from patients as pat
+left join flu_shot_2022 as flu
+  on pat.id = flu.patient
+where 1=1
+  and pat.id in (select patient from active_patients)
+
+/* 
+--Here we dont have repeating rows when we joined flu_shot_2022 with patients table as it was ONE TO ONE
+--we did left join so that we can know who got the flushots and who doesnot
+--To depict it very well we used case statement which show that patient row in flu table in the join will have null values,
+    for rows of id in patients table who doesnot have recieved flu shots... so using CASE statement we have depicted those values more clearly who are not jabbed.
+--active_patients CTE is also setup for one to one relationship so as to dodge rows duplication that could happen by directly joining the encounter table with patients
+--First of all why are we making active_patients CTE---Inorder to satisfy the condition of active patient, From Encounter table we have reduced the patients who
+   have encounter between specified dates.... This way we filter out all the rows from patient table who have encounters outside this date
+--The WHERE 1=1 in this query serves as a placeholder condition to facilitate adding further filtering criteria, 
+   such as and pat.id in (select patient from active_patients)
+*/
